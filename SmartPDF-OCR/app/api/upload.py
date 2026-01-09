@@ -2,10 +2,11 @@
 文件上传 API
 """
 
-from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, Dict, Any
 from datetime import datetime
+import threading
 
 from app.core.file_manager import file_manager
 from app.core.pdf_detector import get_pdf_info, PDFInfo
@@ -13,25 +14,83 @@ from app.core.history_index import write_task_meta
 
 router = APIRouter(prefix="/upload", tags=["上传"])
 
+# 解析状态存储
+parse_status: Dict[str, Dict[str, Any]] = {}
+
 
 class UploadResponse(BaseModel):
     """上传响应"""
     task_id: str
     filename: str
     file_size: int
-    pdf_type: str
-    page_count: int
     message: str
+    status: str  # uploaded, parsing, ready, failed
+
+
+class ParseStatusResponse(BaseModel):
+    """解析状态响应"""
+    task_id: str
+    status: str  # parsing, ready, failed
+    pdf_type: Optional[str] = None
+    page_count: Optional[int] = None
+    message: str
+    progress: float = 0
+
+
+def _parse_pdf_background(task_id: str, file_path: str, filename: str, file_size: int):
+    """后台解析 PDF（在线程池中执行）"""
+    try:
+        parse_status[task_id] = {
+            "status": "parsing",
+            "message": "正在分析 PDF 结构...",
+            "progress": 10
+        }
+        
+        pdf_info = get_pdf_info(file_path)
+        
+        parse_status[task_id] = {
+            "status": "ready",
+            "message": "解析完成",
+            "progress": 100,
+            "pdf_type": pdf_info.pdf_type,
+            "page_count": pdf_info.page_count
+        }
+        
+        write_task_meta(
+            task_id,
+            {
+                "filename": filename,
+                "file_size": file_size,
+                "pdf_type": pdf_info.pdf_type,
+                "page_count": pdf_info.page_count,
+                "status": "ready",
+                "created_at": datetime.utcnow().isoformat()
+            }
+        )
+        
+    except Exception as e:
+        parse_status[task_id] = {
+            "status": "failed",
+            "message": f"解析失败: {str(e)}",
+            "progress": 0
+        }
+        write_task_meta(
+            task_id,
+            {
+                "status": "failed",
+                "error": str(e)
+            }
+        )
 
 
 @router.post("", response_model=UploadResponse)
 async def upload_pdf(file: UploadFile = File(...)):
     """
-    上传 PDF 文件
+    上传 PDF 文件（异步模式）
     
-    - 自动生成任务 ID
-    - 校验文件格式
-    - 检测 PDF 类型
+    - 上传后立即返回任务 ID
+    - PDF 解析在后台执行
+    - 通过 /upload/{task_id}/parse-status 轮询解析状态
     """
     # 检查文件类型
     if not file.filename.lower().endswith('.pdf'):
@@ -60,32 +119,62 @@ async def upload_pdf(file: UploadFile = File(...)):
         file_manager.cleanup_task(task_id)
         raise HTTPException(status_code=400, detail=error)
     
-    # 检测 PDF 类型
-    try:
-        pdf_info = get_pdf_info(file_path)
-    except Exception as e:
-        file_manager.cleanup_task(task_id)
-        raise HTTPException(status_code=400, detail=f"PDF 解析失败: {str(e)}")
+    # 初始化解析状态
+    parse_status[task_id] = {
+        "status": "parsing",
+        "message": "已接收文件，正在排队解析...",
+        "progress": 0
+    }
     
-    write_task_meta(
-        task_id,
-        {
-            "filename": file.filename,
-            "file_size": len(content),
-            "pdf_type": pdf_info.pdf_type,
-            "page_count": pdf_info.page_count,
-            "status": "uploaded",
-            "created_at": datetime.utcnow().isoformat()
-        }
+    # 后台线程解析 PDF
+    thread = threading.Thread(
+        target=_parse_pdf_background,
+        args=(task_id, str(file_path), file.filename, len(content))
     )
-
+    thread.start()
+    
     return UploadResponse(
         task_id=task_id,
         filename=file.filename,
         file_size=len(content),
-        pdf_type=pdf_info.pdf_type,
-        page_count=pdf_info.page_count,
-        message="上传成功"
+        message="文件已上传，正在解析中...",
+        status="parsing"
+    )
+
+
+@router.get("/{task_id}/parse-status", response_model=ParseStatusResponse)
+async def get_parse_status(task_id: str):
+    """获取 PDF 解析状态"""
+    if task_id not in parse_status:
+        # 尝试从 meta 文件读取
+        from app.core.history_index import read_task_meta
+        meta = read_task_meta(task_id)
+        if meta and meta.get("status") == "ready":
+            return ParseStatusResponse(
+                task_id=task_id,
+                status="ready",
+                pdf_type=meta.get("pdf_type"),
+                page_count=meta.get("page_count"),
+                message="解析完成",
+                progress=100
+            )
+        elif meta and meta.get("status") == "failed":
+            return ParseStatusResponse(
+                task_id=task_id,
+                status="failed",
+                message=meta.get("error", "解析失败"),
+                progress=0
+            )
+        raise HTTPException(status_code=404, detail="任务不存在")
+    
+    status = parse_status[task_id]
+    return ParseStatusResponse(
+        task_id=task_id,
+        status=status["status"],
+        pdf_type=status.get("pdf_type"),
+        page_count=status.get("page_count"),
+        message=status["message"],
+        progress=status.get("progress", 0)
     )
 
 

@@ -1,0 +1,106 @@
+# =====================
+# Python
+# =====================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# =====================
+# 虚拟环境
+# =====================
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# =====================
+# IDE / 编辑器
+# =====================
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+.settings/
+*.sublime-project
+*.sublime-workspace
+
+# =====================
+# 日志文件
+# =====================
+*.log
+*.err.log
+*.out.log
+logs/
+
+# =====================
+# 本地数据目录（上传/输出/历史）
+# =====================
+uploads/
+outputs/
+input/
+output/
+
+# =====================
+# 临时文件
+# =====================
+*.tmp
+*.temp
+*.bak
+.cache/
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# =====================
+# Node.js / 前端
+# =====================
+node_modules/
+.next/
+out/
+.turbo/
+*.tsbuildinfo
+next-env.d.ts
+
+# =====================
+# 系统文件
+# =====================
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# =====================
+# 测试相关（可选保留）
+# =====================
+# tests/
+# test_*.py
+
+# =====================
+# 其他
+# =====================
+*.pdf
+*.docx
+!README.md

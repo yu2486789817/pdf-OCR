@@ -18,6 +18,7 @@ router = APIRouter(prefix="/history", tags=["历史"])
 class HistoryItem(BaseModel):
     task_id: str
     filename: Optional[str] = None
+    file_size: Optional[int] = None
     pdf_type: Optional[str] = None
     page_count: Optional[int] = None
     status: Optional[str] = None
@@ -53,9 +54,10 @@ async def list_history():
             HistoryItem(
                 task_id=task_id,
                 filename=filename,
+                file_size=meta.get("file_size"),
                 pdf_type=meta.get("pdf_type"),
                 page_count=meta.get("page_count"),
-                status=meta.get("status"),
+                status=meta.get("status") or ("completed" if has_result else "uploaded"),
                 created_at=meta.get("created_at"),
                 updated_at=updated_at,
                 has_result=has_result,

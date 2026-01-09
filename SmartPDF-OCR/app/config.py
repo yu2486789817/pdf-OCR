@@ -55,6 +55,12 @@ class Settings(BaseSettings):
     GRADIO_PORT: int = 7860
     GRADIO_SHARE: bool = False
     
+    # AI 语义重排配置
+    AI_API_URL: str = "https://api.openai.com/v1/chat/completions"
+    AI_API_KEY: str = ""  # 通过环境变量或 .env 文件设置
+    AI_MODEL: str = "gpt-4o-mini"
+    AI_MAX_CHUNK_CHARS: int = 2000  # 每段最大字符数
+    
     def model_post_init(self, __context):
         """初始化后处理"""
         if self.UPLOAD_DIR is None:

@@ -65,6 +65,12 @@ class PostProcessor:
             header_footer_repeat_threshold or 
             settings.HEADER_FOOTER_REPEAT_THRESHOLD
         )
+        
+        # 边距过滤参数 (百分比 0-100)
+        self.ignore_top = 0
+        self.ignore_bottom = 0
+        self.ignore_left = 0
+        self.ignore_right = 0
     
     def process(self, ocr_result: OCRResult) -> ProcessedPage:
         """
@@ -77,6 +83,10 @@ class PostProcessor:
             处理后的页面
         """
         lines = ocr_result.lines.copy()
+        
+        # 边距过滤
+        if any([self.ignore_top, self.ignore_bottom, self.ignore_left, self.ignore_right]):
+            lines = self._filter_by_margins(lines, ocr_result.img_width, ocr_result.img_height)
         
         # 排序
         lines.sort(key=lambda x: (x.y_min, x.x_min))
@@ -112,6 +122,47 @@ class PostProcessor:
             pages = self._remove_headers_footers(pages)
         
         return pages
+    
+    def _filter_by_margins(
+        self, 
+        lines: List[OCRLine], 
+        width: int, 
+        height: int
+    ) -> List[OCRLine]:
+        """根据边距百分比过滤文本行"""
+        if width <= 0 or height <= 0:
+            return lines
+            
+        filtered = []
+        for line in lines:
+            # 计算中心点坐标
+            cx = (line.x_min + line.x_max) / 2
+            cy = (line.y_min + line.y_max) / 2
+            
+            # 计算百分比
+            px = (cx / width) * 100
+            py = (cy / height) * 100
+            
+            # 检查是否在忽略区域
+            is_ignored = False
+            if self.ignore_top > 0 and py < self.ignore_top:
+                is_ignored = True
+            elif self.ignore_bottom > 0 and py > (100 - self.ignore_bottom):
+                is_ignored = True
+            elif self.ignore_left > 0 and px < self.ignore_left:
+                is_ignored = True
+            elif self.ignore_right > 0 and px > (100 - self.ignore_right):
+                is_ignored = True
+                
+            # 智能过滤：在底部边距区域，如果只有数字，大概率是页码
+            if not is_ignored and py > 85: # 底部 15% 区域
+                if re.match(r'^\s*[\-－]?\s*\d+\s*[\-－]?\s*$', line.text):
+                    is_ignored = True
+            
+            if not is_ignored:
+                filtered.append(line)
+            
+        return filtered
     
     def _merge_same_row_lines(self, lines: List[OCRLine]) -> List[OCRLine]:
         """合并同一行的文本块"""

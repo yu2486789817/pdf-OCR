@@ -30,7 +30,11 @@ class OCRRequest(BaseModel):
     binarize: bool = False
     deskew: bool = True
     dpi: int = 300
-    pages: Optional[List[int]] = None  # 1-based ??????????
+    pages: Optional[List[int]] = None  # 1-based 指定页码
+    ignore_top: int = 0      # 忽略顶部百分比 (0-100)
+    ignore_bottom: int = 0   # 忽略底部百分比
+    ignore_left: int = 0     # 忽略左侧百分比
+    ignore_right: int = 0    # 忽略右侧百分比
 
 
 class OCRResponse(BaseModel):
@@ -100,8 +104,15 @@ def process_ocr_task(
         renderer = PDFRenderer(dpi=options.dpi)
         ocr_engine = OCREngine()
         post_processor = PostProcessor()
+        
+        # 应用边距过滤设置
+        post_processor.ignore_top = options.ignore_top
+        post_processor.ignore_bottom = options.ignore_bottom
+        post_processor.ignore_left = options.ignore_left
+        post_processor.ignore_right = options.ignore_right
 
         ocr_results = []
+        processed_pages = [] # 记录处理后的页面对象，用于批量后处理
 
         # ??? PDF ??????????????
         if pdf_info.pdf_type == "text":
@@ -188,6 +199,7 @@ def process_ocr_task(
 
             # ???
             processed = post_processor.process(ocr_result)
+            processed_pages.append(processed)
 
             ocr_results.append(
                 {
@@ -198,6 +210,19 @@ def process_ocr_task(
                     "method": "ocr"
                 }
             )
+
+        # 批量后处理：移除重复的页眉页脚
+        if settings.REMOVE_HEADER_FOOTER:
+            final_pages = post_processor._remove_headers_footers(processed_pages)
+            # 同步回 ocr_results
+            for idx, page in enumerate(final_pages):
+                if idx < len(ocr_results):
+                    ocr_results[idx]["text"] = page.text
+                    ocr_results[idx]["paragraphs"] = [p.text for p in page.paragraphs]
+                    if page.header:
+                        ocr_results[idx]["header"] = page.header
+                    if page.footer:
+                        ocr_results[idx]["footer"] = page.footer
 
         # ????
         output_dir = file_manager.get_task_output_dir(task_id)

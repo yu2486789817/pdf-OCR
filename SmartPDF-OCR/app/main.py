@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
-from app.api import upload, ocr, export, tasks, history
+from app.api import upload, ocr, export, tasks, history, ai
 
 app = FastAPI(
     title="SmartPDF-OCR",
@@ -34,6 +34,7 @@ app.include_router(ocr.router, prefix="/api")
 app.include_router(export.router, prefix="/api")
 app.include_router(tasks.router, prefix="/api")
 app.include_router(history.router, prefix="/api")
+app.include_router(ai.router, prefix="/api")
 
 
 @app.get("/")

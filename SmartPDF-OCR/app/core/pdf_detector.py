@@ -55,28 +55,61 @@ class PDFDetector:
             with pdfplumber.open(pdf_path) as pdf:
                 page_count = len(pdf.pages)
                 
-                for i, page in enumerate(pdf.pages):
-                    # 提取页面文本
+                # 如果页数过多（超过 50 页），进行采样检测以加快速度
+                sample_indices = range(page_count)
+                is_sampled = False
+                if page_count > 50:
+                    is_sampled = True
+                    # 采样：前 15 页，中间 15 页，最后 15 页
+                    s1 = list(range(min(15, page_count)))
+                    s2 = list(range(max(0, page_count // 2 - 7), min(page_count, page_count // 2 + 8)))
+                    s3 = list(range(max(0, page_count - 15), page_count))
+                    sample_indices = sorted(list(set(s1 + s2 + s3)))
+
+                for i in range(page_count):
+                    # 如果不需要检测所有页面，且不在采样范围内，默认标记为 image (或者根据采样结果推断)
+                    # 这里为了保证 page_count 准确，循环还是要跑，但 extract_text 只在采样点做
+                    if is_sampled and i not in sample_indices:
+                        # 非采样页先假设
+                        continue
+                        
+                    page = pdf.pages[i]
                     text = page.extract_text() or ""
                     char_count = len(text.strip())
                     total_chars += char_count
                     
-                    # 判断当前页面类型
                     if char_count >= self.threshold:
                         text_pages.append(i)
                     else:
                         image_pages.append(i)
                 
-                # 计算平均每页字符数
-                avg_chars = total_chars / page_count if page_count > 0 else 0
-                
-                # 确定整体 PDF 类型
-                if len(image_pages) == 0:
-                    pdf_type = "text"
-                elif len(text_pages) == 0:
-                    pdf_type = "image"
+                # 处理未采样页面的逻辑（如果是采样模式）
+                if is_sampled:
+                    # 根据采样比例推算总体类型
+                    sample_text_count = len([idx for idx in text_pages if idx in sample_indices])
+                    sample_image_count = len([idx for idx in image_pages if idx in sample_indices])
+                    
+                    if sample_text_count > 0 and sample_image_count > 0:
+                        pdf_type = "mixed"
+                    elif sample_text_count > 0:
+                        pdf_type = "text"
+                        # 补充全量索引（虽然不完全准确，但能用）
+                        text_pages = list(range(page_count))
+                        image_pages = []
+                    else:
+                        pdf_type = "image"
+                        image_pages = list(range(page_count))
+                        text_pages = []
+                    
+                    avg_chars = total_chars / len(sample_indices) if sample_indices else 0
                 else:
-                    pdf_type = "mixed"
+                    avg_chars = total_chars / page_count if page_count > 0 else 0
+                    if len(image_pages) == 0:
+                        pdf_type = "text"
+                    elif len(text_pages) == 0:
+                        pdf_type = "image"
+                    else:
+                        pdf_type = "mixed"
                 
                 return PDFInfo(
                     file_path=str(pdf_path),

@@ -52,6 +52,8 @@ class OCRResult:
     """单页 OCR 结果"""
     page_num: int
     lines: List[OCRLine] = field(default_factory=list)
+    img_width: int = 0
+    img_height: int = 0
     
     @property
     def text(self) -> str:
@@ -152,7 +154,12 @@ class OCREngine:
                 )
                 lines.append(line)
         
-        ocr_result = OCRResult(page_num=page_num, lines=lines)
+        ocr_result = OCRResult(
+            page_num=page_num, 
+            lines=lines,
+            img_width=image.shape[1],
+            img_height=image.shape[0]
+        )
         ocr_result.sort_by_position()
         
         return ocr_result
