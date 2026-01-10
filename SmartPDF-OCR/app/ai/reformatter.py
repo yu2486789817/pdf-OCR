@@ -31,9 +31,13 @@ class AIReformatter:
         model: str = None,
         max_chunk_chars: int = 2000  # 每段最大字符数
     ):
-        self.api_url = api_url or getattr(settings, 'AI_API_URL', 'https://api.openai.com/v1/chat/completions')
+        self.api_url = api_url or getattr(
+            settings,
+            'AI_API_URL',
+            'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent'
+        )
         self.api_key = api_key or getattr(settings, 'AI_API_KEY', '')
-        self.model = model or getattr(settings, 'AI_MODEL', 'gpt-4o-mini')
+        self.model = model or getattr(settings, 'AI_MODEL', 'gemini-3.0-flash')
         self.max_chunk_chars = max_chunk_chars
         
         self.system_prompt = """你是一个专业的文档排版专家。你的任务是优化从 OCR（光学字符识别）提取的文本。
@@ -90,24 +94,32 @@ class AIReformatter:
         """调用 AI API 处理单个文本块"""
         try:
             headers = {
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {self.api_key}"
+                "Content-Type": "application/json"
             }
-            
+
             payload = {
-                "model": self.model,
-                "messages": [
-                    {"role": "system", "content": self.system_prompt},
-                    {"role": "user", "content": f"请优化以下 OCR 文本的排版：\n\n{text}"}
+                "systemInstruction": {
+                    "role": "system",
+                    "parts": [{"text": self.system_prompt}]
+                },
+                "contents": [
+                    {
+                        "role": "user",
+                        "parts": [{"text": f"请优化以下 OCR 文本的排版：\n\n{text}"}]
+                    }
                 ],
-                "temperature": 0.3,
-                "max_tokens": 4000
+                "generationConfig": {
+                    "temperature": 0.3,
+                    "maxOutputTokens": 4000
+                }
             }
-            
+
+            url = self.api_url.format(model=self.model) if "{model}" in self.api_url else self.api_url
             response = await client.post(
-                self.api_url,
+                url,
                 json=payload,
                 headers=headers,
+                params={"key": self.api_key},
                 timeout=60.0
             )
             
@@ -120,7 +132,19 @@ class AIReformatter:
                 )
             
             data = response.json()
-            formatted = data['choices'][0]['message']['content']
+            candidates = data.get("candidates") or []
+            formatted = ""
+            if candidates:
+                parts = candidates[0].get("content", {}).get("parts", [])
+                if parts:
+                    formatted = parts[0].get("text", "")
+            if not formatted:
+                return ReformatResult(
+                    original=text,
+                    formatted=text,
+                    success=False,
+                    error="API 返回内容为空"
+                )
             
             return ReformatResult(
                 original=text,
