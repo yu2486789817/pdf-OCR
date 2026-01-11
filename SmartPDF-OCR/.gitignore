@@ -99,8 +99,13 @@ tests/
 test_*.py
 
 # =====================
-# 其他
+# Electron / Packaging
 # =====================
-*.pdf
-*.docx
-!README.md
+dist-electron/
+release/
+*.exe
+*.dmg
+*.app
+*.zip
+*.spec
+!ocr_engine.spec

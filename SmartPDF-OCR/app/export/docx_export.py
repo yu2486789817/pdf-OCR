@@ -47,7 +47,8 @@ class DocxExporter:
         pages: List[ProcessedPage],
         output_path: Union[str, Path],
         title: Optional[str] = None,
-        include_page_breaks: bool = True
+        include_page_breaks: bool = True,
+        is_markdown: bool = False
     ) -> Path:
         """
         导出为 DOCX 文件
@@ -57,6 +58,7 @@ class DocxExporter:
             output_path: 输出文件路径
             title: 文档标题
             include_page_breaks: 是否在每页后添加分页符
+            is_markdown: 是否按 Markdown 格式渲染内容
             
         Returns:
             输出文件路径
@@ -75,7 +77,10 @@ class DocxExporter:
         
         # 添加内容
         for i, page in enumerate(pages):
-            self._add_page_content(doc, page)
+            if is_markdown:
+                self._add_markdown_content(doc, page)
+            else:
+                self._add_page_content(doc, page)
             
             # 添加分页符
             if include_page_breaks and i < len(pages) - 1:
@@ -100,23 +105,72 @@ class DocxExporter:
         heading.alignment = WD_ALIGN_PARAGRAPH.CENTER
     
     def _add_page_content(self, doc: Document, page: ProcessedPage) -> None:
-        """添加页面内容"""
+        """添加普通页面内容"""
         for paragraph in page.paragraphs:
             p = doc.add_paragraph()
-            run = p.add_run(paragraph.text)
-            
-            # 设置字体
-            run.font.name = self.font_name
-            run.font.size = Pt(self.font_size)
-            
-            # 设置中文字体
-            run._element.rPr.rFonts.set(
-                '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}eastAsia',
-                self.font_name
-            )
-            
-            # 设置行间距
+            self._add_run_with_style(p, paragraph.text)
             p.paragraph_format.line_spacing = self.line_spacing
+
+    def _add_markdown_content(self, doc: Document, page: ProcessedPage) -> None:
+        """解析并添加 Markdown 内容"""
+        import re
+        
+        # 合并所有段落文本（通常 AI 结果是一大段）
+        full_text = "\n".join([p.text for p in page.paragraphs])
+        lines = full_text.split('\n')
+        
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            
+            # 标题 (Headers)
+            if line.startswith('#'):
+                # 计算级别
+                level = 0
+                for char in line:
+                    if char == '#':
+                        level += 1
+                    else:
+                        break
+                content = line[level:].strip()
+                if level > 9: level = 9
+                doc.add_heading(content, level=level)
+                continue
+            
+            # 列表 (Lists)
+            if line.startswith('- ') or line.startswith('* '):
+                content = line[2:].strip()
+                p = doc.add_paragraph(style='List Bullet')
+            elif re.match(r'^\d+\.\s', line):
+                # 简单有序列表检测
+                match = re.match(r'^(\d+\.\s)(.*)', line)
+                content = match.group(2)
+                p = doc.add_paragraph(style='List Number')
+            else:
+                p = doc.add_paragraph()
+                content = line
+                p.paragraph_format.line_spacing = self.line_spacing
+            
+            # 内联格式处理 (Bold)
+            # 分割 **bold**
+            parts = re.split(r'(\*\*.*?\*\*)', content)
+            for part in parts:
+                if part.startswith('**') and part.endswith('**') and len(part) > 4:
+                    self._add_run_with_style(p, part[2:-2], bold=True)
+                else:
+                    self._add_run_with_style(p, part)
+
+    def _add_run_with_style(self, paragraph, text, bold=False):
+        """添加带样式的文本块"""
+        run = paragraph.add_run(text)
+        run.bold = bold
+        run.font.name = self.font_name
+        run.font.size = Pt(self.font_size)
+        run._element.rPr.rFonts.set(
+            '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}eastAsia',
+            self.font_name
+        )
     
     def export_with_confidence(
         self,

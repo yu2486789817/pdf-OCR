@@ -1,11 +1,18 @@
 {
-  "name": "smartpdf-ocr-web",
+  "name": "smartpdf-ocr",
+  "version": "1.0.0",
+  "description": "Smart PDF OCR Desktop Application",
+  "main": "electron/main.js",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start -p 7860",
-    "lint": "next lint"
+    "lint": "next lint",
+    "electron:dev": "cross-env NODE_ENV=development electron .",
+    "electron:build": "npm run build && electron-builder",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder"
   },
   "dependencies": {
     "next": "^14.2.35",
@@ -15,6 +22,45 @@
   "devDependencies": {
     "autoprefixer": "10.4.20",
     "postcss": "8.4.45",
-    "tailwindcss": "3.4.10"
+    "tailwindcss": "3.4.10",
+    "electron": "32.3.3",
+    "electron-builder": "^24.9.1",
+    "cross-env": "^7.0.3"
+  },
+  "build": {
+    "appId": "com.smartpdf.ocr",
+    "productName": "SmartPDF-OCR",
+    "directories": {
+      "output": "dist-electron"
+    },
+    "files": [
+      "electron/**/*",
+      "out/**/*",
+      "public/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "../dist/ocr-engine.exe",
+        "to": "bin/ocr-engine.exe"
+      }
+    ],
+    "win": {
+      "target": ["nsis", "portable"],
+      "icon": "public/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "public/icon.ico",
+      "uninstallerIcon": "public/icon.ico"
+    },
+    "mac": {
+      "target": ["dmg"],
+      "icon": "public/icon.icns"
+    },
+    "linux": {
+      "target": ["AppImage"],
+      "icon": "public/icon.png"
+    }
   }
 }

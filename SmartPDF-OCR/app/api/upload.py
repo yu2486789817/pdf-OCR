@@ -97,7 +97,7 @@ async def upload_pdf(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="请上传 PDF 文件")
     
     # 生成任务 ID
-    task_id = file_manager.generate_task_id()
+    task_id = file_manager.generate_task_id(file.filename)
     
     # 读取文件内容
     content = await file.read()

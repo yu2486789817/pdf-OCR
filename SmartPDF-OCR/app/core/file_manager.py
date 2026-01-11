@@ -26,9 +26,24 @@ class FileManager:
         self.upload_dir.mkdir(parents=True, exist_ok=True)
         self.output_dir.mkdir(parents=True, exist_ok=True)
     
-    def generate_task_id(self) -> str:
-        """生成唯一任务 ID"""
-        return str(uuid.uuid4())
+    def generate_task_id(self, filename: Optional[str] = None) -> str:
+        """
+        生成有意义的唯一任务 ID
+        格式: YYYYMMDD_HHMMSS_文件名简写
+        """
+        now = datetime.now().strftime("%Y%m%d_%H%M%S")
+        if filename:
+            # 获取文件名（不含扩展名），清理特殊字符
+            prefix = Path(filename).stem
+            # 只保留字母数字和下划线，且截断长度
+            prefix = "".join(c for c in prefix if c.isalnum() or c == "_")
+            prefix = prefix[:12]  # 限制前缀长度
+            return f"{now}_{prefix}"
+        else:
+            # 降级：使用随机后缀
+            import random
+            suffix = "".join(random.choices("abcdefghijklmnopqrstuvwxyz", k=4))
+            return f"{now}_{suffix}"
     
     def get_task_upload_dir(self, task_id: str) -> Path:
         """获取任务上传目录"""

@@ -77,3 +77,14 @@ async def get_history_result(task_id: str):
         raise HTTPException(status_code=404, detail="OCR 结果不存在")
     with open(result_file, "r", encoding="utf-8") as f:
         return json.load(f)
+
+
+@router.delete("/{task_id}")
+async def delete_history(task_id: str):
+    """删除历史记录"""
+    files = file_manager.list_task_files(task_id)
+    if not files["uploads"] and not files["outputs"]:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    
+    file_manager.cleanup_task(task_id)
+    return {"message": "已删除"}

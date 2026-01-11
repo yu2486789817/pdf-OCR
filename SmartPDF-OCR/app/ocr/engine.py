@@ -94,7 +94,8 @@ class OCREngine:
         self,
         lang: str = None,
         use_angle_cls: bool = None,
-        use_gpu: bool = None
+        use_gpu: bool = None,
+        use_tensorrt: bool = None
     ):
         """
         初始化 OCR 引擎
@@ -103,6 +104,7 @@ class OCREngine:
             lang: 语言代码 (ch/en/等)
             use_angle_cls: 是否启用方向分类
             use_gpu: 是否使用 GPU
+            use_tensorrt: 是否使用 TensorRT
         """
         if self._ocr is not None:
             return
@@ -110,17 +112,57 @@ class OCREngine:
         self.lang = lang or settings.OCR_LANG
         self.use_angle_cls = use_angle_cls if use_angle_cls is not None else settings.OCR_USE_ANGLE_CLS
         self.use_gpu = use_gpu if use_gpu is not None else settings.OCR_USE_GPU
+        self.use_tensorrt = use_tensorrt if use_tensorrt is not None else settings.OCR_USE_TENSORRT
         
         self._init_ocr()
     
     def _init_ocr(self):
         """初始化 PaddleOCR"""
+        import sys
+        import paddle
+
+        # 自动检测 GPU 可用性
+        if self.use_gpu:
+            if not paddle.device.is_compiled_with_cuda():
+                print("警告: 未检测到 CUDA 环境，正在降级到 CPU 模式...")
+                self.use_gpu = False
+                self.use_tensorrt = False
+            else:
+                # 尝试获取可用设备
+                try:
+                    paddle.device.set_device('gpu')
+                except Exception as e:
+                    print(f"警告: 无法初始化 GPU ({e})，正在降级到 CPU 模式...")
+                    self.use_gpu = False
+                    self.use_tensorrt = False
+
+        if not self.use_gpu:
+            self.use_tensorrt = False
+
+        print(f"OCR 引擎初始化: GPU={self.use_gpu}, TensorRT={self.use_tensorrt}")
+
+        # 捕获日志输出
         self._ocr = PaddleOCR(
             use_angle_cls=self.use_angle_cls,
             lang=self.lang,
             use_gpu=self.use_gpu,
+            use_tensorrt=self.use_tensorrt,
             show_log=False
         )
+
+    def warmup(self):
+        """引擎预热：执行一次虚拟识别以加载模型和初始化 GPU 环境"""
+        if self._ocr is None:
+            self._init_ocr()
+        
+        print("正在预热 OCR 引擎...")
+        try:
+            # 创建一个 100x100 的纯色图片进行预热
+            dummy_img = np.zeros((100, 100, 3), dtype=np.uint8)
+            self._ocr.ocr(dummy_img, cls=self.use_angle_cls)
+            print("OCR 引擎预热完成")
+        except Exception as e:
+            print(f"OCR 引擎预热失败: {e}")
     
     def recognize(self, image: np.ndarray, page_num: int = 0) -> OCRResult:
         """

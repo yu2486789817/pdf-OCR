@@ -121,24 +121,54 @@ async def _process_ai_enhance(
         # 并行处理所有页面
         enhanced_results = await reformatter.reformat_pages(ocr_results)
         
-        # 更新结果
+        # 更新结果并统计成功/失败
+        success_count = 0
+        error_messages = []
         for i, result in enumerate(enhanced_results):
             ocr_results[i]["ai_formatted"] = result.get("ai_formatted", "")
             ocr_results[i]["ai_success"] = result.get("ai_success", False)
+            if result.get("ai_success"):
+                success_count += 1
+            else:
+                # 检查是否有错误信息
+                if result.get("ai_errors"):
+                    error_messages.extend(result.get("ai_errors", []))
         
         # 保存增强后的结果
         with open(result_file, "w", encoding="utf-8") as f:
             json.dump(ocr_results, f, ensure_ascii=False, indent=2)
         
-        ai_status[task_id] = {
-            "status": "completed",
-            "progress": 100,
-            "chunks_total": total_chunks,
-            "chunks_processed": total_chunks,
-            "message": "AI 增强完成"
-        }
-        
-        write_task_meta(task_id, {"ai_enhanced": True})
+        # 根据成功率决定状态
+        if success_count == 0:
+            # 全部失败
+            error_msg = error_messages[0] if error_messages else "所有请求均失败，请检查 API 配置"
+            ai_status[task_id] = {
+                "status": "failed",
+                "progress": 0,
+                "chunks_total": total_chunks,
+                "chunks_processed": 0,
+                "message": f"AI 增强失败: {error_msg}"
+            }
+        elif success_count < len(enhanced_results):
+            # 部分成功
+            ai_status[task_id] = {
+                "status": "completed",
+                "progress": 100,
+                "chunks_total": total_chunks,
+                "chunks_processed": success_count,
+                "message": f"部分完成 ({success_count}/{len(enhanced_results)} 页成功)"
+            }
+            write_task_meta(task_id, {"ai_enhanced": True})
+        else:
+            # 全部成功
+            ai_status[task_id] = {
+                "status": "completed",
+                "progress": 100,
+                "chunks_total": total_chunks,
+                "chunks_processed": total_chunks,
+                "message": "AI 增强完成"
+            }
+            write_task_meta(task_id, {"ai_enhanced": True})
         
     except Exception as e:
         ai_status[task_id] = {

@@ -6,13 +6,28 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
+from contextlib import asynccontextmanager
 from app.config import settings
 from app.api import upload, ocr, export, tasks, history, ai
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """应用生命周期工作：启动时预热 OCR 引擎"""
+    if settings.OCR_WARMUP:
+        try:
+            from app.ocr.engine import OCREngine
+            # 初始化并预热
+            engine = OCREngine()
+            engine.warmup()
+        except Exception as e:
+            print(f"启动预热失败: {e}")
+    yield
 
 app = FastAPI(
     title="SmartPDF-OCR",
     description="面向中文场景的智能 PDF OCR 系统",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 # 配置 CORS

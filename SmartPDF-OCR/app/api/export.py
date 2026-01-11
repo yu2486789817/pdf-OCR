@@ -21,9 +21,10 @@ router = APIRouter(prefix="/export", tags=["导出"])
 
 class ExportRequest(BaseModel):
     """导出请求"""
-    format: Literal["txt", "docx", "pdf"] = "txt"
+    format: Literal["txt", "docx", "pdf", "md"] = "txt"
     include_page_numbers: bool = True
     title: Optional[str] = None
+    use_ai_formatted: bool = False  # 是否使用 AI 增强后的文本
 
 
 class ExportResponse(BaseModel):
@@ -46,13 +47,17 @@ def load_ocr_result(task_id: str) -> list:
         return json.load(f)
 
 
-def convert_to_processed_pages(ocr_data: list) -> list:
+def convert_to_processed_pages(ocr_data: list, use_ai_formatted: bool = False) -> list:
     """将 OCR 数据转换为 ProcessedPage 对象"""
     pages = []
     for item in ocr_data:
         paragraphs = []
         
-        if "paragraphs" in item:
+        # 如果启用 AI 增强且有 AI 结果，使用 AI 结果
+        if use_ai_formatted and item.get("ai_formatted"):
+            text = item.get("ai_formatted", "")
+            paragraphs.append(Paragraph(text=text, lines=[]))
+        elif "paragraphs" in item:
             for text in item["paragraphs"]:
                 paragraphs.append(Paragraph(text=text, lines=[]))
         else:
@@ -79,7 +84,7 @@ async def export_result(task_id: str, request: ExportRequest):
     
     # 加载 OCR 结果
     ocr_data = load_ocr_result(task_id)
-    pages = convert_to_processed_pages(ocr_data)
+    pages = convert_to_processed_pages(ocr_data, use_ai_formatted=request.use_ai_formatted)
     
     # 准备输出目录
     output_dir = file_manager.get_task_output_dir(task_id)
@@ -93,10 +98,30 @@ async def export_result(task_id: str, request: ExportRequest):
         exporter = TxtExporter(include_page_numbers=request.include_page_numbers)
         exporter.export(pages, output_file)
         
+    elif request.format == "md":
+        output_file = output_dir / f"{original_name}_ocr.md"
+        # 直接使用 TxtExporter 导出内容，Markdown 格式主要体现在内容本身（如果是 AI 处理过的）
+        # 如果需要更精细的 Markdown 结构（如页码作为二级标题），可以在这里定制
+        with open(output_file, "w", encoding="utf-8") as f:
+            if request.title:
+                f.write(f"# {request.title}\n\n")
+            
+            for page in pages:
+                if request.include_page_numbers:
+                    f.write(f"\n## 第 {page.page_num} 页\n\n")
+                
+                for para in page.paragraphs:
+                    f.write(f"{para.text}\n\n")
+                    
     elif request.format == "docx":
         output_file = output_dir / f"{original_name}_ocr.docx"
         exporter = DocxExporter()
-        exporter.export(pages, output_file, title=request.title)
+        exporter.export(
+            pages, 
+            output_file, 
+            title=request.title,
+            is_markdown=request.use_ai_formatted
+        )
         
     elif request.format == "pdf":
         output_file = output_dir / f"{original_name}_searchable.pdf"
@@ -141,6 +166,7 @@ async def download_file(task_id: str, filename: str):
     suffix = file_path.suffix.lower()
     media_types = {
         ".txt": "text/plain",
+        ".md": "text/markdown",
         ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         ".pdf": "application/pdf"
     }
